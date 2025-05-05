@@ -81,7 +81,7 @@ Place the following:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/grammer-scroing-engine.git
+git clone https://github.com/Riya78278/SHL_ASSIGNMENT.git
 cd grammer-scroing-engine
 ```
 
