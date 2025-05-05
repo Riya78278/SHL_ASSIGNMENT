@@ -13,7 +13,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 import torch
 from tqdm import tqdm
 import re
-
+import joblib
 # Load CSV Data
 train_df = pd.read_csv('data/train.csv')
 
@@ -153,3 +153,146 @@ joblib.dump(scaler_text, 'models/scaler_text.pkl')
 
 # Save the trained model
 model.save('models/hybrid_model.h5')
+test_df = pd.read_csv('data/test.csv')  # test.csv should have only 'filename' column
+
+# Load trained scalers and model
+scaler_audio = joblib.load('models/scaler_audio.pkl')
+scaler_text = joblib.load('models/scaler_text.pkl')
+model = tf.keras.models.load_model('models/hybrid_model.h5')
+
+# Store predictions
+predictions = []
+
+# --- Predict Scores for Test Set ---
+for idx, row in tqdm(test_df.iterrows(), total=len(test_df)):
+    audio_path = f"data/audios_test/{row['filename']}"
+
+    # Transcribe audio
+    transcription = transcribe_audio(audio_path)
+    if not transcription or len(transcription.split()) > 300:
+        print(f"⚠️ Skipping: {row['filename']} (empty or too long transcription)")
+        predictions.append(0)  # or np.nan if you want to mark as invalid
+        continue
+
+    # Analyze grammar
+    grammar_report = analyze_grammar(transcription)
+
+    # Extract features
+    audio_feat = extract_audio_features(audio_path)
+    audio_feat_scaled = scaler_audio.transform([audio_feat])
+    text_feat_scaled = scaler_text.transform([[
+        grammar_report['error_count'],
+        len(grammar_report['error_types'])
+    ]])
+
+    # Predict
+    pred = model.predict([audio_feat_scaled, text_feat_scaled])[0][0]
+    predictions.append(pred)
+
+# --- Save Predictions ---
+submission_df = pd.DataFrame({
+    'filename': test_df['filename'],
+    'label': predictions
+})
+submission_df.to_csv('submission.csv', index=False)
+print("✅ Saved predictions to submission.csv")
+
+
+# Split data into X and y
+X_train_audio = audio_train_features
+X_train_text = text_train_features
+
+y_train = train_df['label'].values  # Replace 'target' with the actual column name
+
+# Scale the features
+scaler_audio = StandardScaler()
+scaler_text = StandardScaler()
+X_train_audio = scaler_audio.fit_transform(X_train_audio)
+X_train_text = scaler_text.fit_transform(X_train_text)
+
+# Model Architecture
+audio_input = Input(shape=(X_train_audio.shape[1],))
+audio_dense = Dense(128, activation='relu')(audio_input)
+
+text_input = Input(shape=(X_train_text.shape[1],))
+text_dense = Dense(128, activation='relu')(text_input)
+
+merged = Concatenate()([audio_dense, text_dense])
+output = Dense(1, activation='linear')(merged)
+
+model = Model(inputs=[audio_input, text_input], outputs=output)
+model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+# Model Training
+history = model.fit(
+    [X_train_audio, X_train_text],
+    y_train,
+    validation_split=0.2,
+    epochs=100,
+    callbacks=[
+        EarlyStopping(patience=10),
+        ReduceLROnPlateau(factor=0.2, patience=5)
+    ]
+)
+
+# Scale the features
+scaler_audio = StandardScaler()
+scaler_text = StandardScaler()
+X_train_audio = scaler_audio.fit_transform(X_train_audio)
+X_train_text = scaler_text.fit_transform(X_train_text)
+import joblib
+import os
+
+# Ensure the models/ directory exists
+os.makedirs('models', exist_ok=True)
+
+# Save the scalers
+joblib.dump(scaler_audio, 'models/scaler_audio.pkl')
+joblib.dump(scaler_text, 'models/scaler_text.pkl')
+
+
+# Save the trained model
+model.save('models/hybrid_model.h5')
+test_df = pd.read_csv('data/test.csv')  # test.csv should have only 'filename' column
+
+# Load trained scalers and model
+scaler_audio = joblib.load('models/scaler_audio.pkl')
+scaler_text = joblib.load('models/scaler_text.pkl')
+model = tf.keras.models.load_model('models/hybrid_model.h5')
+
+# Store predictions
+predictions = []
+
+# --- Predict Scores for Test Set ---
+for idx, row in tqdm(test_df.iterrows(), total=len(test_df)):
+    audio_path = f"data/audios_test/{row['filename']}"
+
+    # Transcribe audio
+    transcription = transcribe_audio(audio_path)
+    if not transcription or len(transcription.split()) > 300:
+        print(f"⚠️ Skipping: {row['filename']} (empty or too long transcription)")
+        predictions.append(0)  # or np.nan if you want to mark as invalid
+        continue
+
+    # Analyze grammar
+    grammar_report = analyze_grammar(transcription)
+
+    # Extract features
+    audio_feat = extract_audio_features(audio_path)
+    audio_feat_scaled = scaler_audio.transform([audio_feat])
+    text_feat_scaled = scaler_text.transform([[
+        grammar_report['error_count'],
+        len(grammar_report['error_types'])
+    ]])
+
+    # Predict
+    pred = model.predict([audio_feat_scaled, text_feat_scaled])[0][0]
+    predictions.append(pred)
+
+# --- Save Predictions ---
+submission_df = pd.DataFrame({
+    'filename': test_df['filename'],
+    'label': predictions
+})
+submission_df.to_csv('submission.csv', index=False)
+print("✅ Saved predictions to submission.csv")
